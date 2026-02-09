@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Viewer - Filter Berdasarkan Kolom</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .loader {
+            border-top-color: #3b82f6;
+            animation: spinner 1s linear infinite;
+        }
+        @keyframes spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Custom styling for better table readability */
+        .table-container::-webkit-scrollbar {
+            height: 8px;
+        }
+        .table-container::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen font-sans">
+
+    <div id="app" class="max-w-7xl mx-auto p-4 md:p-10">
+        <!-- Header -->
+        <header class="mb-10 text-center">
+            <h1 class="text-4xl font-extrabold text-slate-800 tracking-tight mb-3">Database Pendaftaran</h1>
+            <div class="inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm font-medium">
+                Data Real-time dari Google Sheets
+            </div>
+        </header>
+
+        <!-- Control Panel -->
+        <div class="bg-white rounded-2xl shadow-xl p-6 mb-8 border border-slate-200">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                <div class="relative">
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Pencarian Cepat</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                        </span>
+                        <input 
+                            type="text" 
+                            id="searchInput" 
+                            placeholder="Cari Nama, NIP, atau Sekolah..." 
+                            class="block w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200 outline-none"
+                        >
+                    </div>
+                </div>
+                <div class="flex flex-col md:items-end justify-end space-y-2">
+                    <span id="rowCount" class="text-sm font-medium text-slate-600 bg-slate-100 px-4 py-2 rounded-lg italic">
+                        Menghubungkan ke server...
+                    </span>
+                    <span id="lastUpdated" class="text-[10px] uppercase tracking-wider text-slate-400"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Display Area -->
+        <div class="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+            <!-- Loading State -->
+            <div id="loadingState" class="py-32 flex flex-col items-center justify-center">
+                <div class="loader ease-linear rounded-full border-4 border-t-4 border-slate-100 h-16 w-16 mb-6"></div>
+                <h2 class="text-slate-700 text-xl font-bold">Sinkronisasi Data...</h2>
+                <p class="text-slate-500 mt-2">Sedang mengunduh file spreadsheet terbaru</p>
+            </div>
+
+            <!-- Error State -->
+            <div id="errorState" class="hidden py-24 px-6 text-center">
+                <div class="bg-red-50 inline-flex p-4 rounded-full mb-4">
+                    <svg class="h-12 w-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <p class="text-xl font-bold text-slate-800">Gagal Memuat Data</p>
+                <p id="errorMessage" class="text-slate-600 mt-2 max-w-md mx-auto"></p>
+                <button onclick="fetchData()" class="mt-8 px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 active:scale-95 transition-all">Coba Segarkan Halaman</button>
+            </div>
+
+            <!-- Table Container -->
+            <div id="tableContainer" class="hidden overflow-x-auto table-container">
+                <table class="min-w-full divide-y divide-slate-200">
+                    <thead class="bg-slate-800 text-white">
+                        <tr>
+                            <th class="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest">No</th>
+                            <th class="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest">Nama Lengkap</th>
+                            <th class="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest">NIP / Identitas</th>
+                            <th class="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest">Sekolah / Instansi</th>
+                            <th class="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest">No. Pendaftaran</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="bg-white divide-y divide-slate-100 text-slate-700">
+                        <!-- Data Rows -->
+                    </tbody>
+                </table>
+                <div id="noResults" class="hidden py-20 text-center">
+                    <svg class="mx-auto h-16 w-16 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 9.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <p class="text-slate-500 text-lg font-medium">Kata kunci tidak ditemukan dalam database</p>
+                </div>
+            </div>
+        </div>
+        
+        <footer class="mt-12 text-center">
+            <p class="text-slate-400 text-sm italic">Sistem Monitoring Data © 2024 • Diperbarui Secara Otomatis</p>
+        </footer>
+    </div>
+
+    <script>
+        // Link CSV dari Google Sheets (Gunakan link yang Anda berikan)
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQmBw7t7CYNsi1abmv4Ed1Qo82x8dr9xfaRmpBk9pwyCakEuSxQFG76RxYLXZLEmtBDswPvF6OOw3LR/pub?gid=522171751&single=true&output=csv';
+        
+        let allData = [];
+
+        // Fungsi parsing CSV yang lebih tangguh menggunakan Regex
+        function parseCSVLine(line) {
+            const result = [];
+            let cell = '';
+            let inQuotes = false;
+            
+            // Mencoba mendeteksi delimiter (titik koma atau koma)
+            // Biasanya Google Sheets menggunakan koma (,) untuk output=csv
+            const delimiter = ','; 
+
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === delimiter && !inQuotes) {
+                    result.push(cell.trim());
+                    cell = '';
+                } else {
+                    cell += char;
+                }
+            }
+            result.push(cell.trim());
+            return result;
+        }
+
+        async function fetchData() {
+            showState('loading');
+            try {
+                // Tambahkan timestamp untuk menghindari cache browser
+                const response = await fetch(`${CSV_URL}&t=${Date.now()}`);
+                if (!response.ok) throw new Error('Koneksi ke spreadsheet terputus atau file tidak ditemukan.');
+                
+                const csvText = await response.text();
+                processData(csvText);
+            } catch (error) {
+                console.error(error);
+                document.getElementById('errorMessage').innerText = error.message;
+                showState('error');
+            }
+        }
+
+        function processData(text) {
+            const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
+            if (rows.length < 1) throw new Error('Data tidak ditemukan dalam spreadsheet.');
+
+            // Ambil data baris demi baris mulai dari index 1 (melewati header asli)
+            allData = rows.slice(1).map(line => {
+                const cols = parseCSVLine(line);
+                return {
+                    no: cols[0] || '-',
+                    nama: cols[1] || '-',
+                    nip: cols[2] || '-',
+                    sekolah: cols[3] || '-',
+                    noDaftar: cols[4] || '-'
+                };
+            });
+
+            renderTable(allData);
+            showState('table');
+            document.getElementById('rowCount').innerText = `Database: ${allData.length} Peserta Terdaftar`;
+            document.getElementById('lastUpdated').innerText = `Pembaruan Terakhir: ${new Date().toLocaleTimeString('id-ID')}`;
+        }
+
+        function renderTable(data) {
+            const body = document.getElementById('tableBody');
+            const noResults = document.getElementById('noResults');
+            
+            if (data.length === 0) {
+                body.innerHTML = '';
+                noResults.classList.remove('hidden');
+                return;
+            }
+
+            noResults.classList.add('hidden');
+            body.innerHTML = data.map(row => `
+                <tr class="hover:bg-blue-50/50 transition-colors">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-400">${row.no}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-800">${row.nama}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">${row.nip}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">${row.sekolah}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-bold uppercase">
+                            ${row.noDaftar}
+                        </span>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function handleSearch() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+            const filtered = allData.filter(row => {
+                return (
+                    row.nama.toLowerCase().includes(query) ||
+                    row.nip.toLowerCase().includes(query) ||
+                    row.sekolah.toLowerCase().includes(query) ||
+                    row.noDaftar.toLowerCase().includes(query)
+                );
+            });
+            renderTable(filtered);
+            document.getElementById('rowCount').innerText = `Ditemukan: ${filtered.length} Peserta`;
+        }
+
+        function showState(state) {
+            const states = ['loadingState', 'errorState', 'tableContainer'];
+            states.forEach(s => document.getElementById(s).classList.add('hidden'));
+
+            if (state === 'loading') document.getElementById('loadingState').classList.remove('hidden');
+            if (state === 'error') document.getElementById('errorState').classList.remove('hidden');
+            if (state === 'table') document.getElementById('tableContainer').classList.remove('hidden');
+        }
+
+        // Listeners
+        document.getElementById('searchInput').addEventListener('input', handleSearch);
+
+        // Jalankan saat aplikasi dibuka
+        window.onload = fetchData;
+    </script>
+</body>
+</html>
